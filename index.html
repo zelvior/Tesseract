@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TESSERACT — 4D Hypercube Research Interface</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   ROOT & RESET
+   ============================================================ */
+:root {
+  --c1: #00d4ff;
+  --c1-dim: rgba(0,212,255,0.15);
+  --c1-glow: rgba(0,212,255,0.4);
+  --c2: #7c3aed;
+  --c3: #ec4899;
+  --bg: #020408;
+  --panel-bg: rgba(4,8,16,0.94);
+  --border: rgba(0,212,255,0.14);
+  --border-hi: rgba(0,212,255,0.45);
+  --text-dim: #3a4a5a;
+  --text-mid: #607080;
+  --text-hi: #cdd9e5;
+  --header-h: 0px;
+}
+*, *::before, *::after { box-sizing: border-box; margin:0; padding:0; }
+body {
+  background: var(--bg); color: var(--text-hi);
+  font-family: 'Space Grotesk', sans-serif;
+  overflow: hidden; user-select: none;
+  height: 100vh; width: 100vw;
+}
+.mono { font-family: 'JetBrains Mono', monospace; }
+
+/* ============================================================
+   SCAN LINE
+   ============================================================ */
+@keyframes scandown {
+  0%   { transform: translateY(-120px); }
+  100% { transform: translateY(100vh); }
+}
+#scan-line {
+  position: fixed; left:0; right:0; height:120px; z-index:2; pointer-events:none;
+  background: linear-gradient(to bottom,
+    transparent 0%, rgba(0,212,255,0.018) 40%,
+    rgba(0,212,255,0.032) 50%, rgba(0,212,255,0.018) 60%, transparent 100%);
+  animation: scandown 14s linear infinite;
+}
+
+/* ============================================================
+   CANVAS
+   ============================================================ */
+#canvas-wrap { position:fixed; inset:0; z-index:1; }
+
+/* ============================================================
+   CORNER BRACKETS
+   ============================================================ */
+.cb {
+  position:fixed; width:28px; height:28px; pointer-events:none; z-index:20;
+}
+.cb::before, .cb::after {
+  content:''; position:absolute; background: var(--c1);
+  opacity: 0.7;
+}
+.cb.tl { top:18px; left:18px; }
+.cb.tl::before { top:0; left:0; width:100%; height:1px; }
+.cb.tl::after  { top:0; left:0; height:100%; width:1px; }
+.cb.tr { top:18px; right:18px; }
+.cb.tr::before { top:0; right:0; width:100%; height:1px; }
+.cb.tr::after  { top:0; right:0; height:100%; width:1px; }
+.cb.bl { bottom:18px; left:18px; }
+.cb.bl::before { bottom:0; left:0; width:100%; height:1px; }
+.cb.bl::after  { bottom:0; left:0; height:100%; width:1px; }
+.cb.br { bottom:18px; right:18px; }
+.cb.br::before { bottom:0; right:0; width:100%; height:1px; }
+.cb.br::after  { bottom:0; right:0; height:100%; width:1px; }
+
+/* ============================================================
+   HUD LAYER
+   ============================================================ */
+#hud {
+  position:fixed; inset:0; z-index:10; pointer-events:none;
+  display:flex; flex-direction:column; justify-content:space-between;
+  padding:18px 20px;
+}
+
+/* ============================================================
+   PANEL
+   ============================================================ */
+.panel {
+  background: var(--panel-bg);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid var(--border);
+  box-shadow: 0 0 0 0.5px rgba(0,212,255,0.06), 0 16px 48px rgba(0,0,0,0.85);
+  pointer-events: auto;
+}
+
+/* ============================================================
+   MAIN CONTROL PANEL
+   ============================================================ */
+#ctrl-panel {
+  width: 304px;
+  transition: transform 0.45s cubic-bezier(0.16,1,0.3,1), opacity 0.45s;
+  border-left: 2px solid var(--c1);
+  max-height: calc(100vh - 140px);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#ctrl-panel.hidden {
+  transform: translateX(-120%);
+  opacity: 0; pointer-events: none;
+}
+
+/* Panel header */
+.panel-hdr {
+  padding: 13px 16px 11px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.panel-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px; font-weight:700; color:#fff; letter-spacing:3px;
+}
+.panel-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8.5px; color: var(--c1); letter-spacing:1.5px; margin-top:3px;
+}
+
+/* Tab bar */
+.tab-bar {
+  display: flex; border-bottom: 1px solid var(--border);
+  flex-shrink: 0; padding: 0 2px;
+}
+.tab-btn {
+  flex:1; padding: 8px 2px; background:none; border:none; cursor:pointer;
+  font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:1.5px;
+  text-transform:uppercase; color: var(--text-dim);
+  border-bottom: 2px solid transparent; margin-bottom:-1px;
+  transition: color 0.2s, border-color 0.2s;
+}
+.tab-btn:hover { color: var(--text-mid); }
+.tab-btn.active { color: var(--c1); border-bottom-color: var(--c1); }
+
+/* Tab content */
+.tab-pane { display:none; }
+.tab-pane.active { display:block; }
+
+/* Scrollable area */
+.panel-scroll {
+  overflow-y: auto; flex:1; padding: 14px 16px;
+}
+.panel-scroll::-webkit-scrollbar { width:3px; }
+.panel-scroll::-webkit-scrollbar-track { background:transparent; }
+.panel-scroll::-webkit-scrollbar-thumb { background: rgba(0,212,255,0.2); border-radius:2px; }
+
+/* Section label */
+.sec-lbl {
+  font-family:'JetBrains Mono',monospace; font-size:8px; color: var(--text-dim);
+  letter-spacing:2.5px; text-transform:uppercase;
+  border-left: 2px solid #1a2a3a; padding-left:7px; margin-bottom:10px;
+}
+
+/* Row with label + value */
+.row-lv {
+  display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;
+}
+.row-lbl {
+  font-family:'JetBrains Mono',monospace; font-size:9.5px; color: var(--text-mid);
+}
+.row-sub { font-size:8.5px; color: var(--text-dim); margin-left:4px; }
+.row-val {
+  font-family:'JetBrains Mono',monospace; font-size:9.5px; color: var(--c1);
+  min-width:44px; text-align:right;
+}
+
+/* Spacer */
+.sp { margin-top:16px; }
+.sp-sm { margin-top:10px; }
+
+/* ============================================================
+   SLIDERS
+   ============================================================ */
+input[type=range] {
+  -webkit-appearance:none; width:100%; height:18px;
+  background:transparent; outline:none; cursor:pointer;
+}
+input[type=range]::-webkit-slider-runnable-track {
+  height:2px; background:rgba(255,255,255,0.07); border-radius:1px;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none; width:8px; height:14px; margin-top:-6px;
+  background: var(--c1); border-radius:2px; cursor:pointer;
+  box-shadow: 0 0 8px var(--c1-glow); transition: transform 0.12s, background 0.12s;
+}
+input[type=range]::-webkit-slider-thumb:hover {
+  background:#fff; transform:scaleY(1.25);
+  box-shadow: 0 0 12px rgba(255,255,255,0.6);
+}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn {
+  background: rgba(0,212,255,0.04);
+  border: 1px solid var(--border);
+  color: var(--c1); cursor:pointer;
+  font-family:'JetBrains Mono',monospace; font-size:9px;
+  letter-spacing:1.5px; text-transform:uppercase;
+  padding:6px 12px; transition:all 0.18s; pointer-events:auto;
+  white-space:nowrap;
+}
+.btn:hover {
+  background: rgba(0,212,255,0.1);
+  border-color: var(--border-hi);
+  box-shadow: 0 0 12px rgba(0,212,255,0.12);
+}
+.btn:active { transform: scale(0.97); }
+.btn.on {
+  background: rgba(0,212,255,0.14);
+  border-color: var(--border-hi);
+  box-shadow: inset 0 0 10px rgba(0,212,255,0.1);
+}
+.btn.paused {
+  color: #f59e0b; border-color: rgba(245,158,11,0.3);
+  background: rgba(245,158,11,0.06);
+}
+.btn.paused:hover { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.6); }
+
+.btn-full { width:100%; text-align:center; display:block; margin-top:10px; }
+
+/* Preset buttons */
+.preset-btn {
+  width:100%; text-align:left; padding:9px 11px; margin-bottom:5px;
+  background: rgba(0,212,255,0.03); border:1px solid rgba(0,212,255,0.09);
+  color: var(--text-mid); cursor:pointer;
+  font-family:'Space Grotesk',sans-serif; font-size:11px; font-weight:500;
+  transition:all 0.18s;
+}
+.preset-btn:hover {
+  background: rgba(0,212,255,0.09); border-color: var(--border-hi); color: #fff;
+}
+.preset-btn .pd {
+  font-size:9px; color: var(--text-dim); margin-top:2px; display:block;
+  font-family:'JetBrains Mono',monospace; letter-spacing:0.5px;
+}
+
+/* Theme chips */
+.theme-chips { display:flex; gap:8px; margin-bottom:16px; }
+.tchip {
+  width:22px; height:22px; border-radius:4px;
+  border:2px solid transparent; cursor:pointer;
+  transition:all 0.2s; position:relative;
+}
+.tchip:hover { transform:scale(1.15); }
+.tchip.sel { border-color:#fff; }
+.tchip.sel::after {
+  content:''; position:absolute; inset:-4px;
+  border:1px solid rgba(255,255,255,0.3); border-radius:6px;
+}
+
+/* Toggle row */
+.toggle-row {
+  display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;
+}
+.toggle-lbl { font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--text-mid); }
+
+/* Info card */
+.info-card {
+  background:rgba(0,212,255,0.03); border:1px solid rgba(0,212,255,0.07);
+  padding:10px 12px; margin-bottom:8px;
+}
+.info-stat { font-family:'JetBrains Mono',monospace; font-size:20px; color:var(--c1); font-weight:700; }
+.info-stat-lbl { font-size:8px; color:var(--text-dim); letter-spacing:1px; text-transform:uppercase; margin-bottom:2px; }
+.info-stat-sub { font-size:8px; color:#1e3040; margin-top:2px; }
+
+.code-block {
+  background:rgba(0,0,0,0.5); border-left:2px solid var(--c1);
+  padding:10px 12px; margin:10px 0;
+  font-family:'JetBrains Mono',monospace; font-size:8.5px;
+  color:#8899aa; line-height:1.7;
+}
+.info-p { font-size:10px; color:var(--text-mid); line-height:1.65; margin-bottom:8px; }
+.info-hi { color:var(--c1); }
+
+/* ============================================================
+   STATUS + RIGHT SIDE
+   ============================================================ */
+#right-panel {
+  display:flex; flex-direction:column; align-items:flex-end; gap:8px;
+  pointer-events:none;
+}
+.sys-row {
+  display:flex; align-items:center; gap:6px; justify-content:flex-end;
+}
+.dot { width:6px; height:6px; border-radius:50%; background:var(--c1); box-shadow:0 0 8px var(--c1-glow); }
+
+@keyframes blink  { 0%,100%{opacity:1} 50%{opacity:0.15} }
+@keyframes blink2 { 0%,100%{opacity:1} 50%{opacity:0.15} }
+.blink  { animation:blink  2.1s ease-in-out infinite; }
+.blink2 { animation:blink2 1.6s ease-in-out infinite 0.4s; }
+.blink3 { animation:blink2 2.8s ease-in-out infinite 0.9s; }
+
+.sys-lbl { font-family:'JetBrains Mono',monospace; font-size:8.5px; color:var(--text-dim); letter-spacing:2px; }
+#mission-clock { font-family:'JetBrains Mono',monospace; font-size:15px; color:var(--c1); letter-spacing:3.5px; }
+#fps-lbl { font-family:'JetBrains Mono',monospace; font-size:8.5px; color:var(--text-dim); text-align:right; }
+
+/* Mini panels on right */
+.mini-panel {
+  border-left:2px solid var(--c1);
+  pointer-events:auto;
+}
+.mini-lbl {
+  font-family:'JetBrains Mono',monospace; font-size:7.5px; color:var(--text-dim);
+  letter-spacing:2px; text-transform:uppercase; margin-bottom:5px;
+}
+
+/* ============================================================
+   TELEMETRY (bottom-left)
+   ============================================================ */
+#telem-panel {
+  border-left:0; border-bottom:2px solid var(--c1);
+  padding:9px 14px; pointer-events:none;
+  display:inline-block;
+}
+
+/* ============================================================
+   BOTTOM ROW
+   ============================================================ */
+#bottom-row {
+  display:flex; justify-content:space-between; align-items:flex-end;
+}
+#quick-btns { display:flex; gap:6px; pointer-events:auto; }
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+#toast {
+  position:fixed; bottom:72px; right:20px; z-index:100;
+  background:var(--panel-bg); border:1px solid var(--border);
+  border-left:2px solid var(--c1); padding:8px 16px;
+  font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--c1);
+  pointer-events:none; opacity:0; transition:opacity 0.3s;
+  letter-spacing:1.5px;
+}
+#toast.show { opacity:1; }
+
+/* ============================================================
+   KEYBOARD OVERLAY
+   ============================================================ */
+#kb-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,0.75);
+  backdrop-filter:blur(12px); z-index:200;
+  display:none; align-items:center; justify-content:center;
+  pointer-events:auto;
+}
+#kb-overlay.show { display:flex; }
+.kb-panel {
+  border-left:2px solid var(--c1); padding:24px; max-width:440px; width:90%;
+}
+.kb-row {
+  display:flex; align-items:center; gap:10px; margin-bottom:9px;
+}
+.key {
+  display:inline-block; background:rgba(255,255,255,0.06);
+  border:1px solid rgba(255,255,255,0.14); border-radius:3px;
+  font-family:'JetBrains Mono',monospace; font-size:9px; color:#888;
+  padding:2px 7px; min-width:32px; text-align:center;
+}
+.key-desc { font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--text-mid); }
+
+/* ============================================================
+   INTRO TITLE
+   ============================================================ */
+@keyframes introFade { 0%{opacity:0;transform:translate(-50%,-50%) scale(0.98)} 15%{opacity:1;transform:translate(-50%,-50%) scale(1)} 75%{opacity:1} 100%{opacity:0} }
+#intro-title {
+  position:fixed; top:50%; left:50%; z-index:50; pointer-events:none; text-align:center;
+  transform:translate(-50%,-50%);
+  animation: introFade 3.5s ease-in-out forwards;
+}
+.intro-main { font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700; letter-spacing:8px; color:var(--c1); text-transform:uppercase; }
+.intro-sub  { font-size:9px; color:var(--text-dim); letter-spacing:5px; margin-top:5px; }
+</style>
+</head>
+<body>
+
+<!-- Scan line -->
+<div id="scan-line"></div>
+
+<!-- Canvas container -->
+<div id="canvas-wrap"></div>
+
+<!-- Corner brackets -->
+<div class="cb tl"></div>
+<div class="cb tr"></div>
+<div class="cb bl"></div>
+<div class="cb br"></div>
+
+<!-- Intro title -->
+<div id="intro-title">
+  <div class="intro-main">TESSERACT</div>
+  <div class="intro-sub">4D HYPERCUBE VISUALIZATION SYSTEM</div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Keyboard overlay -->
+<div id="kb-overlay">
+  <div class="panel kb-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--c1);letter-spacing:3px">KEYBOARD MAP</span>
+      <button class="btn" onclick="closeKb()" style="padding:4px 10px">ESC / CLOSE</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px">
+      <div class="kb-row"><span class="key">Space</span><span class="key-desc">Pause / Resume</span></div>
+      <div class="kb-row"><span class="key">R</span><span class="key-desc">Reset rotations</span></div>
+      <div class="kb-row"><span class="key">T</span><span class="key-desc">Cycle theme</span></div>
+      <div class="kb-row"><span class="key">G</span><span class="key-desc">Toggle grid</span></div>
+      <div class="kb-row"><span class="key">A</span><span class="key-desc">Toggle axes</span></div>
+      <div class="kb-row"><span class="key">V</span><span class="key-desc">Toggle faces</span></div>
+      <div class="kb-row"><span class="key">F</span><span class="key-desc">Fullscreen</span></div>
+      <div class="kb-row"><span class="key">S</span><span class="key-desc">Screenshot PNG</span></div>
+      <div class="kb-row"><span class="key">P</span><span class="key-desc">Toggle panel</span></div>
+      <div class="kb-row"><span class="key">?</span><span class="key-desc">This screen</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     HUD
+     ============================================================ -->
+<div id="hud">
+
+  <!-- TOP ROW -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start">
+
+    <!-- LEFT: toolbar + panel -->
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <!-- Toolbar -->
+      <div style="display:flex;gap:5px;pointer-events:auto">
+        <button class="btn on" id="toggle-btn" onclick="togglePanel()">
+          <svg id="toggle-icon" width="10" height="10" viewBox="0 0 10 10" fill="none" style="vertical-align:middle;margin-right:5px"><path d="M7 1L3 5L7 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="square"/></svg>CTRL
+        </button>
+        <button class="btn" id="pause-btn" onclick="togglePause()">⏸ PAUSE</button>
+        <button class="btn" onclick="doScreenshot()">⬇ PNG</button>
+        <button class="btn" onclick="openKb()">? KEYS</button>
+        <button class="btn" onclick="toggleFullscreen()">⛶</button>
+      </div>
+
+      <!-- Main control panel -->
+      <div id="ctrl-panel" class="panel">
+        <!-- Header -->
+        <div class="panel-hdr">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <div class="panel-title">4D HYPERCUBE</div>
+              <div class="panel-sub">ℝ⁴ → ℝ³ STEREOGRAPHIC PROJECTION</div>
+            </div>
+            <div style="text-align:right">
+              <div class="sys-row" style="margin-bottom:3px">
+                <span class="dot blink"></span>
+                <span class="sys-lbl">LIVE</span>
+              </div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--text-dim)" id="struct-stats">16V · 32E · 24F · 8C</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tab-bar">
+          <button class="tab-btn active" data-tab="rotation" onclick="switchTab('rotation')">ROTATION</button>
+          <button class="tab-btn" data-tab="visual" onclick="switchTab('visual')">VISUAL</button>
+          <button class="tab-btn" data-tab="presets" onclick="switchTab('presets')">PRESETS</button>
+          <button class="tab-btn" data-tab="info" onclick="switchTab('info')">INFO</button>
+        </div>
+
+        <!-- Scrollable body -->
+        <div class="panel-scroll">
+
+          <!-- ===== TAB: ROTATION ===== -->
+          <div class="tab-pane active" id="tab-rotation">
+            <div class="sec-lbl">W-AXIS PROJECTION</div>
+            <div class="row-lv">
+              <span class="row-lbl">STEREO RADIUS</span>
+              <span class="row-val" id="val-dist">2.000</span>
+            </div>
+            <input type="range" id="w-distance" min="1.1" max="5.0" step="0.01" value="2.0">
+
+            <div class="sp"></div>
+            <div class="sec-lbl">ANGULAR VELOCITY (rad·s⁻¹)</div>
+            <div id="rot-sliders"></div><!-- populated by JS -->
+
+            <button class="btn btn-full" onclick="resetRotations()">↺ &nbsp;INITIALIZE ZERO STATE</button>
+          </div>
+
+          <!-- ===== TAB: VISUAL ===== -->
+          <div class="tab-pane" id="tab-visual">
+            <div class="sec-lbl">COLOR THEME</div>
+            <div class="theme-chips" id="theme-chips"></div><!-- populated by JS -->
+
+            <div class="sec-lbl" style="margin-top:4px">RENDERING PARAMETERS</div>
+            <div style="display:flex;flex-direction:column;gap:11px">
+              <div>
+                <div class="row-lv"><span class="row-lbl">EDGE OPACITY</span><span class="row-val" id="val-eopacity">0.85</span></div>
+                <input type="range" id="sl-eopacity" min="0.05" max="1.0" step="0.01" value="0.85">
+              </div>
+              <div>
+                <div class="row-lv"><span class="row-lbl">GLOW LAYER</span><span class="row-val" id="val-glow">0.22</span></div>
+                <input type="range" id="sl-glow" min="0.0" max="0.6" step="0.01" value="0.22">
+              </div>
+              <div>
+                <div class="row-lv"><span class="row-lbl">VERTEX SIZE</span><span class="row-val" id="val-vtx">0.080</span></div>
+                <input type="range" id="sl-vtx" min="0.01" max="0.35" step="0.005" value="0.08">
+              </div>
+              <div>
+                <div class="row-lv"><span class="row-lbl">FACE OPACITY</span><span class="row-val" id="val-fopacity">0.040</span></div>
+                <input type="range" id="sl-fopacity" min="0.0" max="0.30" step="0.005" value="0.04">
+              </div>
+              <div>
+                <div class="row-lv"><span class="row-lbl">FOG DENSITY</span><span class="row-val" id="val-fog">0.080</span></div>
+                <input type="range" id="sl-fog" min="0.0" max="0.35" step="0.005" value="0.08">
+              </div>
+              <div>
+                <div class="row-lv"><span class="row-lbl">PROJ. SCALE</span><span class="row-val" id="val-scale">2.00</span></div>
+                <input type="range" id="sl-scale" min="0.5" max="4.5" step="0.05" value="2.0">
+              </div>
+            </div>
+
+            <div class="sp"></div>
+            <div class="sec-lbl">SCENE ELEMENTS</div>
+            <div class="toggle-row"><span class="toggle-lbl">Grid Plane</span>
+              <button class="btn on" id="btn-grid" onclick="toggleEl('grid')">ON</button></div>
+            <div class="toggle-row"><span class="toggle-lbl">XYZ Axes</span>
+              <button class="btn on" id="btn-axes" onclick="toggleEl('axes')">ON</button></div>
+            <div class="toggle-row"><span class="toggle-lbl">Cell Faces</span>
+              <button class="btn on" id="btn-faces" onclick="toggleEl('faces')">ON</button></div>
+            <div class="toggle-row"><span class="toggle-lbl">W-Depth Color</span>
+              <button class="btn on" id="btn-wcolor" onclick="toggleEl('wcolor')">ON</button></div>
+            <div class="toggle-row"><span class="toggle-lbl">Starfield</span>
+              <button class="btn on" id="btn-stars" onclick="toggleEl('stars')">ON</button></div>
+            <div class="toggle-row"><span class="toggle-lbl">Scan Line FX</span>
+              <button class="btn on" id="btn-scan" onclick="toggleEl('scan')">ON</button></div>
+          </div>
+
+          <!-- ===== TAB: PRESETS ===== -->
+          <div class="tab-pane" id="tab-presets">
+            <div class="sec-lbl">NAMED ROTATION SEQUENCES</div>
+            <button class="preset-btn" onclick="applyPreset('default')">
+              DEFAULT ORBIT<span class="pd">xy · xw · zw — classic tesseract display</span>
+            </button>
+            <button class="preset-btn" onclick="applyPreset('clifford')">
+              CLIFFORD TORUS<span class="pd">Symmetric double rotation in two planes</span>
+            </button>
+            <button class="preset-btn" onclick="applyPreset('tumble')">
+              TUMBLE<span class="pd">Multi-plane chaotic folding motion</span>
+            </button>
+            <button class="preset-btn" onclick="applyPreset('hyperscrew')">
+              HYPERSCREW<span class="pd">Coordinated 4D helical trajectory</span>
+            </button>
+            <button class="preset-btn" onclick="applyPreset('isoclinic')">
+              ISOCLINIC<span class="pd">Equal-angle rotation in all paired planes</span>
+            </button>
+            <button class="preset-btn" onclick="applyPreset('chaos')">
+              CHAOS MODE<span class="pd">All six planes at varying angular velocities</span>
+            </button>
+            <button class="preset-btn" onclick="applyPreset('zen')">
+              ZEN / SLOW<span class="pd">Ultra-low angular velocity — meditative</span>
+            </button>
+            <button class="preset-btn" onclick="applyPreset('still')">
+              STILL FRAME<span class="pd">ω = 0 in all planes — frozen geometry</span>
+            </button>
+          </div>
+
+          <!-- ===== TAB: INFO ===== -->
+          <div class="tab-pane" id="tab-info">
+            <div class="sec-lbl">TOPOLOGICAL PROPERTIES</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
+              <div class="info-card">
+                <div class="info-stat-lbl">VERTICES</div>
+                <div class="info-stat">16</div>
+                <div class="info-stat-sub">2⁴ = 16</div>
+              </div>
+              <div class="info-card">
+                <div class="info-stat-lbl">EDGES</div>
+                <div class="info-stat">32</div>
+                <div class="info-stat-sub">4 · 2³ = 32</div>
+              </div>
+              <div class="info-card">
+                <div class="info-stat-lbl">SQUARE FACES</div>
+                <div class="info-stat">24</div>
+                <div class="info-stat-sub">C(4,2) · 4 = 24</div>
+              </div>
+              <div class="info-card">
+                <div class="info-stat-lbl">CUBIC CELLS</div>
+                <div class="info-stat">8</div>
+                <div class="info-stat-sub">4D bounding cubes</div>
+              </div>
+            </div>
+
+            <div class="sec-lbl">PROJECTION FORMULA</div>
+            <p class="info-p">Each 4D vertex <span class="info-hi">{x,y,z,w}</span> is stereographically projected to 3D using the perspective division:</p>
+            <div class="code-block">
+              w' = 1 / (d − w)<br>
+              x₃ = x · w' · s<br>
+              y₃ = y · w' · s<br>
+              z₃ = z · w' · s
+            </div>
+            <p class="info-p">Where <span class="info-hi">d</span> is the stereographic radius (W-distance slider) and <span class="info-hi">s</span> is the projection scale factor.</p>
+
+            <div class="sec-lbl sp-sm">ROTATION PLANES IN ℝ⁴</div>
+            <p class="info-p">In 4-dimensional space, rotation occurs in <span class="info-hi">bivector planes</span>, not around axes. There are C(4,2) = <span class="info-hi">6</span> such planes:</p>
+            <div class="code-block">
+              XY · XZ · XW<br>
+              YZ · YW · ZW
+            </div>
+            <p class="info-p">Rotations in the <span class="info-hi">XW, YW, ZW</span> planes involve the 4th dimension W and produce the characteristic "folding" of the tesseract invisible to 3D observers.</p>
+
+            <div class="sec-lbl sp-sm">W-DEPTH COLORING</div>
+            <p class="info-p">Edge colors are mapped from the projected W-coordinate of each vertex — <span class="info-hi">primary color</span> at w=+1 (near projection eye) to <span class="info-hi">secondary color</span> at w=−1 (far).</p>
+          </div>
+
+        </div><!-- /panel-scroll -->
+      </div><!-- /ctrl-panel -->
+    </div><!-- /left -->
+
+    <!-- RIGHT: Status cluster -->
+    <div id="right-panel">
+      <div>
+        <div class="sys-row" style="margin-bottom:5px">
+          <span class="dot blink2" style="width:5px;height:5px"></span>
+          <span class="sys-lbl">SYS.NOMINAL</span>
+        </div>
+        <div id="mission-clock">T+00:00:00</div>
+        <div id="fps-lbl" style="margin-top:3px">FPS: —</div>
+      </div>
+
+      <!-- FPS Graph -->
+      <div class="panel mini-panel" style="padding:9px 11px">
+        <div class="mini-lbl">FRAME RATE</div>
+        <canvas id="fps-canvas" width="130" height="32" style="display:block;width:130px;height:32px"></canvas>
+      </div>
+
+      <!-- Radar chart -->
+      <div class="panel mini-panel" style="padding:9px 11px">
+        <div class="mini-lbl">ω MAGNITUDES</div>
+        <canvas id="radar-canvas" width="90" height="90" style="display:block;width:90px;height:90px"></canvas>
+      </div>
+    </div>
+
+  </div><!-- /top row -->
+
+  <!-- BOTTOM ROW -->
+  <div id="bottom-row">
+    <!-- Telemetry -->
+    <div class="panel" id="telem-panel" style="padding:9px 14px;border-left:0;border-bottom:2px solid var(--c1);display:inline-block">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:7.5px;color:var(--text-dim);letter-spacing:2.5px;margin-bottom:6px">LIVE TELEMETRY — ROTATION ANGLES (RAD / DEG)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 22px" id="telem-data"></div>
+    </div>
+    <!-- Quick actions -->
+    <div id="quick-btns">
+      <button class="btn" onclick="resetCamera()">⊕ RESET CAM</button>
+    </div>
+  </div>
+
+</div><!-- /hud -->
+
+<!-- Three.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+/* ============================================================
+   STATE
+   ============================================================ */
+let angles = { xy:0, xz:0, xw:0, yz:0, yw:0, zw:0 };
+let rates  = { xy:0.010, xz:0, xw:0.015, yz:0, yw:0, zw:0.010 };
+let wDist   = 2.0;
+let pScale  = 2.0;
+let isPaused = false;
+let panelOpen = true;
+let kbOpen = false;
+let startTime = Date.now();
+
+// Visual toggles
+let showGrid=true, showAxes=true, showFaces=true, useWColor=true, showStars=true, showScan=true;
+let edgeOpacity=0.85, glowAmt=0.22, vtxSize=0.08, faceOpacity=0.04, fogDensity=0.08;
+
+/* ============================================================
+   THEMES
+   ============================================================ */
+const THEMES = {
+  CYAN:    { p:[0,0.831,1],       s:[0.53,0.07,0.89],  hex:'#00d4ff', name:'Cyan' },
+  NEON:    { p:[0,1,0.4],         s:[1,0.85,0],         hex:'#00ff66', name:'Neon' },
+  COSMIC:  { p:[0.67,0.27,1],     s:[1,0.27,0.27],      hex:'#aa44ff', name:'Cosmic' },
+  SOLAR:   { p:[1,0.67,0],        s:[1,1,1],            hex:'#ffaa00', name:'Solar' },
+  CRIMSON: { p:[1,0.13,0.27],     s:[1,0.75,0.1],       hex:'#ff2244', name:'Crimson' },
+};
+const THEME_KEYS = Object.keys(THEMES);
+let currentTheme = 'CYAN';
+
+/* ============================================================
+   PRESETS
+   ============================================================ */
+const PRESETS = {
+  default:    { xy:0.010, xz:0,     xw:0.015, yz:0,     yw:0,     zw:0.010 },
+  clifford:   { xy:0.015, xz:0,     xw:0.015, yz:0,     yw:0,     zw:0 },
+  tumble:     { xy:0.008, xz:0.012, xw:0.007, yz:0.010, yw:0.005, zw:0.009 },
+  hyperscrew: { xy:0.020, xz:0,     xw:0.020, yz:0,     yw:0,     zw:0 },
+  isoclinic:  { xy:0.012, xz:0.012, xw:0.012, yz:0.012, yw:0.012, zw:0.012 },
+  chaos:      { xy:0.015, xz:0.013, xw:0.017, yz:0.011, yw:0.019, zw:0.007 },
+  zen:        { xy:0.003, xz:0,     xw:0.003, yz:0,     yw:0,     zw:0.003 },
+  still:      { xy:0,     xz:0,     xw:0,     yz:0,     yw:0,     zw:0 },
+};
+
+/* ============================================================
+   4D MATHEMATICS
+   ============================================================ */
+const verts4D = [];
+for (let i=0; i<16; i++)
+  verts4D.push({ x:(i&1)?1:-1, y:(i&2)?1:-1, z:(i&4)?1:-1, w:(i&8)?1:-1 });
+
+const edges4D = [];
+for (let i=0; i<16; i++)
+  for (let j=i+1; j<16; j++) {
+    let d = ((i&1)!==(j&1)?1:0)+((i&2)!==(j&2)?1:0)+((i&4)!==(j&4)?1:0)+((i&8)!==(j&8)?1:0);
+    if (d===1) edges4D.push([i,j]);
+  }
+
+// 24 square faces of the tesseract
+const faces4D = [];
+[[0,1],[0,2],[0,3],[1,2],[1,3],[2,3]].forEach(([a,b]) => {
+  const [c,d] = [0,1,2,3].filter(x=>x!==a&&x!==b);
+  for (let fc=0;fc<2;fc++) for (let fd=0;fd<2;fd++) {
+    const base=(fc<<c)|(fd<<d);
+    faces4D.push([base, base|(1<<a), base|(1<<a)|(1<<b), base|(1<<b)]);
+  }
+});
+
+function rotate4D(p) {
+  let x=p.x, y=p.y, z=p.z, w=p.w, nx,ny,nz,nw;
+  const {xy,xz,xw,yz,yw,zw} = angles;
+  if(xy){let c=Math.cos(xy),s=Math.sin(xy);nx=x*c-y*s;ny=x*s+y*c;x=nx;y=ny;}
+  if(xz){let c=Math.cos(xz),s=Math.sin(xz);nx=x*c-z*s;nz=x*s+z*c;x=nx;z=nz;}
+  if(xw){let c=Math.cos(xw),s=Math.sin(xw);nx=x*c-w*s;nw=x*s+w*c;x=nx;w=nw;}
+  if(yz){let c=Math.cos(yz),s=Math.sin(yz);ny=y*c-z*s;nz=y*s+z*c;y=ny;z=nz;}
+  if(yw){let c=Math.cos(yw),s=Math.sin(yw);ny=y*c-w*s;nw=y*s+w*c;y=ny;w=nw;}
+  if(zw){let c=Math.cos(zw),s=Math.sin(zw);nz=z*c-w*s;nw=z*s+w*c;z=nz;w=nw;}
+  return {x,y,z,w};
+}
+
+/* ============================================================
+   THREE.JS SCENE
+   ============================================================ */
+const container = document.getElementById('canvas-wrap');
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x020408);
+scene.fog = new THREE.FogExp2(0x020408, fogDensity);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 300);
+camera.position.set(4.5, 3.2, 6.5);
+const camDefaultPos = camera.position.clone();
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, preserveDrawingBuffer:true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+container.appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.05;
+controls.enablePan = false; controls.minDistance = 2; controls.maxDistance = 40;
+
+/* ---- Starfield ---- */
+const starGeo = new THREE.BufferGeometry();
+const STAR_COUNT = 3500;
+const starPos = new Float32Array(STAR_COUNT*3);
+for (let i=0;i<STAR_COUNT;i++) {
+  const r=90+Math.random()*60, th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
+  starPos[i*3]=r*Math.sin(ph)*Math.cos(th); starPos[i*3+1]=r*Math.sin(ph)*Math.sin(th); starPos[i*3+2]=r*Math.cos(ph);
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos,3));
+const starMat = new THREE.PointsMaterial({ color:0xffffff, size:0.35, transparent:true, opacity:0.55, sizeAttenuation:true });
+const stars = new THREE.Points(starGeo, starMat);
+scene.add(stars);
+
+/* ---- Grid ---- */
+const gridHelper = new THREE.GridHelper(22, 44, 0x00d4ff, 0x070a10);
+gridHelper.position.y = -4.5;
+gridHelper.material.opacity = 0.1; gridHelper.material.transparent = true;
+scene.add(gridHelper);
+
+/* ---- Axes ---- */
+const axesHelper = new THREE.AxesHelper(2.2);
+axesHelper.material.transparent = true; axesHelper.material.opacity = 0.35;
+scene.add(axesHelper);
+
+/* ---- Edge geometry (shared by main + glow layer) ---- */
+const E = edges4D.length;   // 32
+const edgePosArr = new Float32Array(E*2*3);
+const edgeColArr = new Float32Array(E*2*3);
+const edgeGeo = new THREE.BufferGeometry();
+edgeGeo.setAttribute('position', new THREE.BufferAttribute(edgePosArr,3));
+edgeGeo.setAttribute('color',    new THREE.BufferAttribute(edgeColArr,3));
+
+const edgeMat = new THREE.LineBasicMaterial({
+  vertexColors:true, transparent:true, opacity:edgeOpacity,
+  blending:THREE.AdditiveBlending, depthWrite:false
+});
+const edgeSegs = new THREE.LineSegments(edgeGeo, edgeMat);
+scene.add(edgeSegs);
+
+// Glow layer — same geometry, dimmer material
+const glowMat = new THREE.LineBasicMaterial({
+  vertexColors:true, transparent:true, opacity:glowAmt,
+  blending:THREE.AdditiveBlending, depthWrite:false
+});
+const glowSegs = new THREE.LineSegments(edgeGeo, glowMat);
+scene.add(glowSegs);
+
+/* ---- Vertex points ---- */
+const vtxGeo = new THREE.BufferGeometry();
+const vtxPosArr = new Float32Array(16*3);
+vtxGeo.setAttribute('position', new THREE.BufferAttribute(vtxPosArr,3));
+const vtxMat = new THREE.PointsMaterial({
+  color:0xffffff, size:vtxSize, transparent:true, opacity:0.95,
+  blending:THREE.AdditiveBlending, depthWrite:false, sizeAttenuation:true
+});
+const vtxPts = new THREE.Points(vtxGeo, vtxMat);
+scene.add(vtxPts);
+
+/* ---- Face geometry ---- */
+const faceGeo = new THREE.BufferGeometry();
+const facePosArr = new Float32Array(faces4D.length * 6 * 3); // 24×6×3=432
+faceGeo.setAttribute('position', new THREE.BufferAttribute(facePosArr,3));
+const faceMat = new THREE.MeshBasicMaterial({
+  color: new THREE.Color(...THEMES.CYAN.p),
+  transparent:true, opacity:faceOpacity,
+  blending:THREE.AdditiveBlending, depthWrite:false,
+  side:THREE.DoubleSide
+});
+const faceMesh = new THREE.Mesh(faceGeo, faceMat);
+scene.add(faceMesh);
+
+/* ============================================================
+   PROJECTION CACHE
+   ============================================================ */
+const proj3D  = Array.from({length:16}, ()=>new THREE.Vector3());
+const projW   = new Float32Array(16);
+
+function projectAll() {
+  for (let i=0;i<16;i++) {
+    const r = rotate4D(verts4D[i]);
+    const ws = 1 / (wDist - r.w);
+    proj3D[i].set(r.x*ws*pScale, r.y*ws*pScale, r.z*ws*pScale);
+    projW[i] = r.w;
+  }
+}
+
+function wToColor(w, theme) {
+  const t = Math.max(0, Math.min(1, (w+1.5)/3.0));
+  const p=theme.p, s=theme.s;
+  return [p[0]*t+s[0]*(1-t), p[1]*t+s[1]*(1-t), p[2]*t+s[2]*(1-t)];
+}
+
+function updateGeometry() {
+  const th = THEMES[currentTheme];
+  // Vertices
+  for (let i=0;i<16;i++) {
+    const v=proj3D[i];
+    vtxPosArr[i*3]=v.x; vtxPosArr[i*3+1]=v.y; vtxPosArr[i*3+2]=v.z;
+  }
+  vtxGeo.attributes.position.needsUpdate = true;
+
+  // Edges + colors
+  for (let i=0;i<E;i++) {
+    const [a,b]=edges4D[i]; const pa=proj3D[a], pb=proj3D[b];
+    edgePosArr[i*6]=pa.x;   edgePosArr[i*6+1]=pa.y;  edgePosArr[i*6+2]=pa.z;
+    edgePosArr[i*6+3]=pb.x; edgePosArr[i*6+4]=pb.y;  edgePosArr[i*6+5]=pb.z;
+
+    if (useWColor) {
+      const ca=wToColor(projW[a],th), cb=wToColor(projW[b],th);
+      edgeColArr[i*6]=ca[0];  edgeColArr[i*6+1]=ca[1]; edgeColArr[i*6+2]=ca[2];
+      edgeColArr[i*6+3]=cb[0];edgeColArr[i*6+4]=cb[1]; edgeColArr[i*6+5]=cb[2];
+    } else {
+      const c=th.p;
+      edgeColArr[i*6]=c[0];edgeColArr[i*6+1]=c[1];edgeColArr[i*6+2]=c[2];
+      edgeColArr[i*6+3]=c[0];edgeColArr[i*6+4]=c[1];edgeColArr[i*6+5]=c[2];
+    }
+  }
+  edgeGeo.attributes.position.needsUpdate = true;
+  edgeGeo.attributes.color.needsUpdate = true;
+
+  // Faces
+  for (let i=0;i<faces4D.length;i++) {
+    const [v0,v1,v2,v3]=faces4D[i];
+    const p0=proj3D[v0],p1=proj3D[v1],p2=proj3D[v2],p3=proj3D[v3];
+    const base=i*18;
+    facePosArr[base]=p0.x;facePosArr[base+1]=p0.y;facePosArr[base+2]=p0.z;
+    facePosArr[base+3]=p1.x;facePosArr[base+4]=p1.y;facePosArr[base+5]=p1.z;
+    facePosArr[base+6]=p2.x;facePosArr[base+7]=p2.y;facePosArr[base+8]=p2.z;
+    facePosArr[base+9]=p0.x;facePosArr[base+10]=p0.y;facePosArr[base+11]=p0.z;
+    facePosArr[base+12]=p2.x;facePosArr[base+13]=p2.y;facePosArr[base+14]=p2.z;
+    facePosArr[base+15]=p3.x;facePosArr[base+16]=p3.y;facePosArr[base+17]=p3.z;
+  }
+  faceGeo.attributes.position.needsUpdate = true;
+}
+
+/* ============================================================
+   BUILD UI — ROTATION SLIDERS
+   ============================================================ */
+const PLANES = [
+  {id:'xy', lbl:'ω(xy)', desc:'XY Plane'},
+  {id:'xz', lbl:'ω(xz)', desc:'XZ Plane'},
+  {id:'xw', lbl:'ω(xw)', desc:'XW — 4D Pan'},
+  {id:'yz', lbl:'ω(yz)', desc:'YZ Plane'},
+  {id:'yw', lbl:'ω(yw)', desc:'YW — 4D Tilt'},
+  {id:'zw', lbl:'ω(zw)', desc:'ZW — 4D Roll'},
+];
+const rotSliders = document.getElementById('rot-sliders');
+PLANES.forEach(pl => {
+  const div = document.createElement('div');
+  div.style.marginBottom = '11px';
+  div.innerHTML = `
+    <div class="row-lv">
+      <span class="row-lbl">${pl.lbl} <span class="row-sub">${pl.desc}</span></span>
+      <span class="row-val" id="v-${pl.id}">${rates[pl.id].toFixed(3)}</span>
+    </div>
+    <input type="range" id="sl-${pl.id}" min="-0.05" max="0.05" step="0.001" value="${rates[pl.id]}">
+  `;
+  rotSliders.appendChild(div);
+  div.querySelector('input').addEventListener('input', e => {
+    rates[pl.id] = parseFloat(e.target.value);
+    document.getElementById(`v-${pl.id}`).textContent = rates[pl.id].toFixed(3);
+    drawRadar();
+  });
+});
+
+// W-distance slider
+document.getElementById('w-distance').addEventListener('input', e => {
+  wDist = parseFloat(e.target.value);
+  document.getElementById('val-dist').textContent = wDist.toFixed(3);
+});
+
+// Visual sliders
+const visualSliders = [
+  {id:'sl-eopacity', val:'val-eopacity', fmt:'0.2f', apply:v=>{ edgeOpacity=v; edgeMat.opacity=v; }},
+  {id:'sl-glow',     val:'val-glow',     fmt:'0.2f', apply:v=>{ glowAmt=v; glowMat.opacity=v; }},
+  {id:'sl-vtx',      val:'val-vtx',      fmt:'0.3f', apply:v=>{ vtxSize=v; vtxMat.size=v; }},
+  {id:'sl-fopacity', val:'val-fopacity', fmt:'0.3f', apply:v=>{ faceOpacity=v; faceMat.opacity=v; }},
+  {id:'sl-fog',      val:'val-fog',      fmt:'0.3f', apply:v=>{ fogDensity=v; scene.fog.density=v; }},
+  {id:'sl-scale',    val:'val-scale',    fmt:'0.2f', apply:v=>{ pScale=v; }},
+];
+visualSliders.forEach(s => {
+  document.getElementById(s.id).addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    s.apply(v);
+    document.getElementById(s.val).textContent =
+      s.fmt==='0.2f' ? v.toFixed(2) : v.toFixed(3);
+  });
+});
+
+/* ============================================================
+   BUILD UI — THEME CHIPS
+   ============================================================ */
+const chipContainer = document.getElementById('theme-chips');
+THEME_KEYS.forEach(key => {
+  const div = document.createElement('div');
+  div.className = 'tchip' + (key==='CYAN'?' sel':'');
+  div.id = 'tchip-'+key;
+  div.style.background = THEMES[key].hex;
+  div.title = THEMES[key].name;
+  div.onclick = () => applyTheme(key);
+  chipContainer.appendChild(div);
+});
+
+/* ============================================================
+   UI FUNCTIONS
+   ============================================================ */
+function togglePanel() {
+  panelOpen = !panelOpen;
+  document.getElementById('ctrl-panel').classList.toggle('hidden', !panelOpen);
+  const btn=document.getElementById('toggle-btn');
+  btn.classList.toggle('on', panelOpen);
+  const path=document.getElementById('toggle-icon').querySelector('path');
+  path.setAttribute('d', panelOpen ? 'M7 1L3 5L7 9' : 'M3 1L7 5L3 9');
+}
+
+function togglePause() {
+  isPaused = !isPaused;
+  const btn = document.getElementById('pause-btn');
+  btn.textContent = isPaused ? '▶ RESUME' : '⏸ PAUSE';
+  btn.classList.toggle('paused', isPaused);
+  toast(isPaused ? 'SIMULATION PAUSED' : 'SIMULATION RESUMED');
+}
+
+function resetRotations() {
+  Object.keys(rates).forEach(k=>rates[k]=0);
+  Object.keys(angles).forEach(k=>angles[k]=0);
+  PLANES.forEach(p=>{
+    document.getElementById(`sl-${p.id}`).value=0;
+    document.getElementById(`v-${p.id}`).textContent='0.000';
+  });
+  drawRadar();
+  toast('ZERO STATE INITIALIZED');
+}
+
+function resetCamera() {
+  camera.position.copy(camDefaultPos);
+  controls.target.set(0,0,0);
+  controls.update();
+  toast('CAMERA RESET');
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+  document.querySelectorAll('.tab-pane').forEach(p=>p.classList.toggle('active', p.id==='tab-'+name));
+}
+
+function toggleEl(which) {
+  switch(which) {
+    case 'grid':   showGrid=!showGrid;   gridHelper.visible=showGrid;   syncBtn('btn-grid',showGrid); break;
+    case 'axes':   showAxes=!showAxes;   axesHelper.visible=showAxes;   syncBtn('btn-axes',showAxes); break;
+    case 'faces':  showFaces=!showFaces; faceMesh.visible=showFaces;    syncBtn('btn-faces',showFaces); break;
+    case 'wcolor': useWColor=!useWColor;                                syncBtn('btn-wcolor',useWColor); break;
+    case 'stars':  showStars=!showStars; stars.visible=showStars;       syncBtn('btn-stars',showStars); break;
+    case 'scan':   showScan=!showScan;   document.getElementById('scan-line').style.display=showScan?'':'none'; syncBtn('btn-scan',showScan); break;
+  }
+  toast(which.toUpperCase() + ': ' + (arguments[0]==='grid'?showGrid:arguments[0]==='axes'?showAxes:arguments[0]==='faces'?showFaces:arguments[0]==='wcolor'?useWColor:arguments[0]==='stars'?showStars:showScan ? 'ON' : 'OFF'));
+}
+function syncBtn(id, state) {
+  const b=document.getElementById(id);
+  b.textContent=state?'ON':'OFF';
+  b.classList.toggle('on',state);
+}
+
+function applyPreset(name) {
+  const p=PRESETS[name];
+  Object.keys(p).forEach(k=>{
+    rates[k]=p[k];
+    const sl=document.getElementById(`sl-${k}`); if(sl)sl.value=p[k];
+    const vl=document.getElementById(`v-${k}`); if(vl)vl.textContent=p[k].toFixed(3);
+  });
+  drawRadar();
+  toast('PRESET: '+name.toUpperCase());
+}
+
+function applyTheme(name) {
+  currentTheme = name;
+  const th = THEMES[name];
+  // Update CSS variable
+  document.documentElement.style.setProperty('--c1', th.hex);
+  document.documentElement.style.setProperty('--c1-glow', th.hex+'66');
+  // Update face material color
+  faceMat.color.setRGB(...th.p);
+  // Update chip selection
+  document.querySelectorAll('.tchip').forEach(c=>c.classList.toggle('sel',c.id==='tchip-'+name));
+  toast('THEME: '+th.name.toUpperCase());
+}
+
+function openKb()  { kbOpen=true;  document.getElementById('kb-overlay').classList.add('show'); }
+function closeKb() { kbOpen=false; document.getElementById('kb-overlay').classList.remove('show'); }
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+  else document.exitFullscreen();
+}
+
+function doScreenshot() {
+  renderer.render(scene, camera);
+  const a=document.createElement('a');
+  a.href=renderer.domElement.toDataURL('image/png');
+  a.download=`tesseract_${Date.now()}.png`;
+  a.click();
+  toast('SCREENSHOT SAVED');
+}
+
+let _toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(()=>el.classList.remove('show'), 2200);
+}
+
+/* ============================================================
+   KEYBOARD
+   ============================================================ */
+window.addEventListener('keydown', e => {
+  if (e.target.tagName==='INPUT') return;
+  if (kbOpen && e.key==='Escape') { closeKb(); return; }
+  switch(e.key) {
+    case ' ': e.preventDefault(); togglePause(); break;
+    case 'r': case 'R': resetRotations(); break;
+    case 't': case 'T': { const i=THEME_KEYS.indexOf(currentTheme); applyTheme(THEME_KEYS[(i+1)%THEME_KEYS.length]); } break;
+    case 'g': case 'G': toggleEl('grid'); break;
+    case 'a': case 'A': toggleEl('axes'); break;
+    case 'v': case 'V': toggleEl('faces'); break;
+    case 'f': case 'F': toggleFullscreen(); break;
+    case 's': case 'S': doScreenshot(); break;
+    case 'p': case 'P': togglePanel(); break;
+    case '?': openKb(); break;
+  }
+});
+
+/* ============================================================
+   FPS SPARKLINE
+   ============================================================ */
+const fpsCanvas = document.getElementById('fps-canvas');
+const fpsCtx = fpsCanvas.getContext('2d');
+let fpsHistory = new Array(65).fill(60);
+let lastFpsTime = performance.now(), frameCount = 0, currentFps = 60;
+
+function drawFpsGraph() {
+  const W=130, H=32;
+  fpsCtx.clearRect(0,0,W,H);
+  const c1 = THEMES[currentTheme].hex;
+
+  // Grid lines
+  fpsCtx.strokeStyle = 'rgba(255,255,255,0.04)'; fpsCtx.lineWidth=1;
+  [30,60,90].forEach(fps=>{
+    const y = H - (fps/120)*H;
+    fpsCtx.beginPath(); fpsCtx.moveTo(0,y); fpsCtx.lineTo(W,y); fpsCtx.stroke();
+  });
+
+  // Line
+  fpsCtx.beginPath();
+  fpsHistory.forEach((fps,i)=>{
+    const x=(i/(fpsHistory.length-1))*W, y=H-(fps/120)*H;
+    i===0?fpsCtx.moveTo(x,y):fpsCtx.lineTo(x,y);
+  });
+  fpsCtx.strokeStyle = c1; fpsCtx.lineWidth=1.5; fpsCtx.stroke();
+
+  // Fill
+  fpsCtx.lineTo(W,H); fpsCtx.lineTo(0,H); fpsCtx.closePath();
+  fpsCtx.fillStyle = c1+'18'; fpsCtx.fill();
+}
+
+/* ============================================================
+   RADAR CHART
+   ============================================================ */
+const radarCanvas = document.getElementById('radar-canvas');
+const radarCtx = radarCanvas.getContext('2d');
+
+function drawRadar() {
+  const W=90, H=90, cx=45, cy=45, maxR=30;
+  radarCtx.clearRect(0,0,W,H);
+
+  // Ring guidelines
+  radarCtx.strokeStyle='rgba(255,255,255,0.05)'; radarCtx.lineWidth=1;
+  [1,0.67,0.33].forEach(f=>{
+    radarCtx.beginPath(); radarCtx.arc(cx,cy,maxR*f,0,Math.PI*2); radarCtx.stroke();
+  });
+
+  const planeIds=['xy','xz','xw','yz','yw','zw'];
+  const planeLabels=['XY','XZ','XW','YZ','YW','ZW'];
+
+  // Spoke lines + labels
+  planeIds.forEach((_,i)=>{
+    const angle=(i/6)*Math.PI*2-Math.PI/2;
+    const px=cx+Math.cos(angle)*maxR, py=cy+Math.sin(angle)*maxR;
+    radarCtx.strokeStyle='rgba(255,255,255,0.08)';
+    radarCtx.beginPath(); radarCtx.moveTo(cx,cy); radarCtx.lineTo(px,py); radarCtx.stroke();
+    const lx=cx+Math.cos(angle)*42, ly=cy+Math.sin(angle)*42;
+    radarCtx.fillStyle='#3a4a5a'; radarCtx.font='6px JetBrains Mono,monospace';
+    radarCtx.textAlign='center'; radarCtx.textBaseline='middle';
+    radarCtx.fillText(planeLabels[i], lx, ly);
+  });
+
+  // Data polygon
+  const c1=THEMES[currentTheme].hex;
+  radarCtx.beginPath();
+  planeIds.forEach((k,i)=>{
+    const mag=Math.min(1,Math.abs(rates[k])/0.05);
+    const angle=(i/6)*Math.PI*2-Math.PI/2;
+    const r=mag*maxR, px=cx+Math.cos(angle)*r, py=cy+Math.sin(angle)*r;
+    i===0?radarCtx.moveTo(px,py):radarCtx.lineTo(px,py);
+  });
+  radarCtx.closePath();
+  radarCtx.fillStyle=c1+'30'; radarCtx.fill();
+  radarCtx.strokeStyle=c1; radarCtx.lineWidth=1.5; radarCtx.stroke();
+
+  // Data dots
+  planeIds.forEach((k,i)=>{
+    const mag=Math.min(1,Math.abs(rates[k])/0.05);
+    const angle=(i/6)*Math.PI*2-Math.PI/2;
+    const r=mag*maxR, px=cx+Math.cos(angle)*r, py=cy+Math.sin(angle)*r;
+    radarCtx.beginPath(); radarCtx.arc(px,py,2.5,0,Math.PI*2);
+    radarCtx.fillStyle=c1; radarCtx.fill();
+  });
+}
+
+/* ============================================================
+   TELEMETRY
+   ============================================================ */
+function updateTelemetry() {
+  const el = document.getElementById('telem-data');
+  const c1 = THEMES[currentTheme].hex;
+  el.innerHTML = PLANES.map(p=>{
+    const rad=(angles[p.id]%(Math.PI*2)).toFixed(3);
+    const deg=((angles[p.id]%(Math.PI*2))*(180/Math.PI)).toFixed(1);
+    return `<div style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:${c1}">
+      θ(${p.id}): <span style="color:var(--text-hi)">${rad}</span>
+      <span style="color:var(--text-dim);margin-left:3px">${deg}°</span>
+    </div>`;
+  }).join('');
+}
+
+function updateClock() {
+  const e=Date.now()-startTime;
+  const h=Math.floor(e/3600000), m=Math.floor((e%3600000)/60000), s=Math.floor((e%60000)/1000);
+  document.getElementById('mission-clock').textContent=
+    `T+${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+/* ============================================================
+   RESIZE
+   ============================================================ */
+window.addEventListener('resize', ()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ============================================================
+   ANIMATION LOOP
+   ============================================================ */
+let _lastHudUpdate = 0;
+
+function animate(now=0) {
+  requestAnimationFrame(animate);
+
+  if (!isPaused) {
+    angles.xy+=rates.xy; angles.xz+=rates.xz; angles.xw+=rates.xw;
+    angles.yz+=rates.yz; angles.yw+=rates.yw; angles.zw+=rates.zw;
+    projectAll();
+    updateGeometry();
+  }
+
+  // FPS
+  frameCount++;
+  const perf = performance.now();
+  if (perf - lastFpsTime >= 1000) {
+    currentFps = Math.round(frameCount*1000/(perf-lastFpsTime));
+    fpsHistory.push(currentFps);
+    if (fpsHistory.length>65) fpsHistory.shift();
+    document.getElementById('fps-lbl').textContent=`FPS: ${currentFps}  |  ${(1000/currentFps).toFixed(1)}ms`;
+    frameCount=0; lastFpsTime=perf;
+    drawFpsGraph();
+    drawRadar();
+    updateTelemetry();
+    updateClock();
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+projectAll();
+updateGeometry();
+drawRadar();
+drawFpsGraph();
+animate();
+</script>
+</body>
+</html>
